@@ -29,22 +29,37 @@ async function getBrowser() {
 
 async function checkPageStatus(url) {
   let statusCode;
+  let pageTitle = null;
+
   try {
     const browser = await getBrowser();
     const page = await browser.newPage();
     const response = await page.goto(url, { waitUntil: "domcontentloaded" });
+
+    // Check the page status
     statusCode = response && response.status() === 200 ? 200 : 404;
+
+    // Get the page title using querySelector
+    if (statusCode === 200) {
+      pageTitle = await page.evaluate(() => {
+        const titleElement = document.querySelector("body > div > h1");
+        return titleElement ? titleElement.innerText : null;
+      });
+    }
+
     await page.close();
   } catch (error) {
     console.error("Error accessing page:", error);
     statusCode = 404;
   }
-  return statusCode === 200;
+
+  return { statusCode, pageTitle };
 }
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get("url");
+
   if (!url) {
     return new Response(
       JSON.stringify({ error: "URL parameter is required" }),
@@ -54,14 +69,17 @@ export async function GET(request) {
       }
     );
   }
-  const status = await checkPageStatus(url);
+
+  const { statusCode, pageTitle } = await checkPageStatus(url);
+  
   return new Response(
     JSON.stringify({
-      statusCode: status ? 200 : 404,
-      is200: status,
+      statusCode,
+      is200: statusCode === 200,
+      title: pageTitle,
     }),
     {
-      status: status ? 200 : 404,
+      status: statusCode === 200 ? 200 : 404,
       headers: { "Content-Type": "application/json" },
     }
   );
